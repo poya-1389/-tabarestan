@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tabaristan — the Hyrcanian Realm</title>
+<meta name="description" content="A vast ancient world of Hyrcanian forests, rivers and a mountain fortress, generated entirely by code with WebGPU.">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0f14; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: #e8e2d4; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #w { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 3; background: radial-gradient(120% 120% at 50% 20%, #1d2b26 0%, #0b0f14 70%); transition: opacity .8s; }
+  #w.off { opacity: 0; pointer-events: none; }
+  #t { font-size: clamp(28px, 6vw, 54px); letter-spacing: .14em; color: #d9c9a3; text-shadow: 0 2px 18px #000a; }
+  #p { font-size: clamp(13px, 2.2vw, 18px); color: #8fae9b; margin: 10px 0 34px; letter-spacing: .3em; }
+  #bar { width: min(420px, 70vw); height: 3px; background: #ffffff22; border-radius: 2px; overflow: hidden; }
+  #b { height: 100%; width: 100%; transform: scaleX(0); transform-origin: 0 50%; background: linear-gradient(90deg, #6ea77f, #d9c9a3); }
+  #s { margin-top: 14px; font-size: 13px; color: #9aa39a; font-style: italic; min-height: 18px; }
+  #e { margin-top: 26px; font-size: 13px; color: #c26; max-width: 80vw; text-align: center; white-space: pre-wrap; display: none; }
+  #m { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; background: #0b0f14cc; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); opacity: 0; pointer-events: none; transition: opacity .45s; }
+  body.m #m { opacity: 1; pointer-events: auto; }
+  body.m canvas { filter: saturate(1.05); }
+  #m h1 { font-size: clamp(30px, 6.5vw, 58px); margin: 0 0 4px; letter-spacing: .18em; color: #d9c9a3; font-weight: normal; text-shadow: 0 3px 24px #000; }
+  #m h2 { font-size: clamp(13px, 2.4vw, 19px); margin: 0 0 34px; color: #8fae9b; letter-spacing: .34em; font-weight: normal; }
+  #d { font: inherit; font-size: clamp(16px, 2.6vw, 21px); letter-spacing: .22em; padding: 13px 44px; color: #0e1410; background: linear-gradient(180deg, #e6d7ae, #c9b27c); border: none; border-radius: 3px; cursor: pointer; box-shadow: 0 6px 26px #0009; }
+  #d:hover { filter: brightness(1.08); }
+  #q { display: flex; gap: 10px; margin-top: 30px; }
+  #q button { font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; color: #b9c2b6; background: #ffffff14; border: 1px solid #ffffff2a; border-radius: 3px; cursor: pointer; }
+  #q button.on { color: #0e1410; background: #cbb87f; border-color: #cbb87f; }
+  #h { margin-top: 30px; font-size: clamp(11px, 1.9vw, 13.5px); color: #7e8a80; text-align: center; line-height: 1.9; max-width: min(620px, 88vw); }
+  #h b { color: #c9b98f; font-weight: normal; }
+  #o { position: fixed; top: 14px; right: 16px; z-index: 2; font: inherit; font-size: 12px; letter-spacing: .18em; color: #d9c9a3; background: #0b0f1455; border: 1px solid #d9c9a344; padding: 7px 16px; border-radius: 3px; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .4s; }
+  body.p #o { opacity: 1; pointer-events: auto; }
+  #i { position: fixed; left: 14px; bottom: 12px; z-index: 2; font: 12px/1.6 monospace; color: #cfe3cf; text-shadow: 0 1px 3px #000; white-space: pre; pointer-events: none; }
+  #r { position: fixed; inset: 0; z-index: 4; display: none; align-items: center; justify-content: center; background: #0b0f14; color: #c9b98f; font-size: 17px; letter-spacing: .1em; text-align: center; }
+  @media (orientation: portrait) and (pointer: coarse) { body.g:not(.rot) #rot { display: flex; } }
+  #rot { position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; background: #0b0f14ee; color: #b9c2b6; font-size: 15px; letter-spacing: .08em; padding: 30px; text-align: center; }
+</style>
+</head>
+<body class="l">
+<canvas id="c"></canvas>
+<div id="w">
+  <div id="t">T A B A R I S T A N</div>
+  <div id="p">&#x633;&#x631;&#x632;&#x645;&#x64A;&#x646; &#x62A;&#x627;&#x628;&#x627;&#x631;&#x633;&#x62A;&#x627;&#x646;</div>
+  <div id="bar"><div id="b"></div></div>
+  <div id="s">Waking the world…</div>
+  <div id="e"></div>
+</div>
+<div id="m">
+  <h1>TABARISTAN</h1>
+  <h2>THE HYRCANIAN REALM</h2>
+  <button id="d">E N T E R</button>
+  <div id="q"><button>Low</button><button>Medium</button><button>High</button></div>
+  <div id="h">
+    <b>drag</b> look &nbsp;·&nbsp; <b>W A S D</b> move &nbsp;·&nbsp; <b>Q / E</b> down / up &nbsp;·&nbsp; <b>Shift</b> haste<br>
+    <b>1 – 6</b> viewpoints &nbsp;·&nbsp; <b>M</b> sound &nbsp;·&nbsp; <b>H</b> stats &nbsp;·&nbsp; <b>Esc</b> menu<br>
+    touch: drag to look, two fingers to move &nbsp;·&nbsp; everything is generated by code — WebGPU, no assets
+  </div>
+</div>
+<button id="o">MENU</button>
+<div id="i"></div>
+<div id="r"></div>
+<div id="rot">Turn your phone sideways for the full view.</div>
+<script type="module">
+/*__QUALITY__*/
+/*__MATH__*/
+/*__WORLD__*/
+/*__WORLD2__*/
+/*__SHADERS__*/
+/*__SHADERS2__*/
+/*__MAIN__*/
+</script>
+</body>
+</html>
