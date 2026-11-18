@@ -18,7 +18,10 @@ const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-perf
 if (!adapter) fail('No WebGPU adapter found.');
 const hasTS = adapter.features.has('timestamp-query');
 const device = await adapter.requestDevice({ requiredFeatures: hasTS ? ['timestamp-query'] : [] });
-device.addEventListener('uncapturederror', (e) => console.error('GPU: ' + e.error.message));
+let booted = false;
+const showErr = (m) => { if (!booted && !dead) { $('e').textContent = m; $('e').style.display = 'block'; } };
+device.addEventListener('uncapturederror', (e) => { console.error('GPU: ' + e.error.message); showErr('GPU error: ' + e.error.message.split('\n')[0]); });
+addEventListener('unhandledrejection', (ev) => { const r = ev.reason; console.error(r); showErr('Error: ' + (r && r.message || r)); });
 device.lost.then((l) => {
   if (l.reason === 'destroyed') return;
   if (LV < 2) { keep('tabaristan', LV + 1); location.reload(); }
@@ -30,6 +33,7 @@ const TU = GPUTextureUsage, BU = GPUBufferUsage, SS = GPUShaderStage;
 const mod = (code) => device.createShaderModule({ code });
 const buf = (data, usage) => { const b = device.createBuffer({ size: (data.byteLength + 3) & ~3, usage: usage | BU.COPY_DST }); Q.writeBuffer(b, 0, data.buffer || data, data.byteOffset || 0, data.byteLength); return b; };
 const tex = (w, h, format, usage, o = {}) => device.createTexture({ size: [w, h, o.d || 1], format, usage, mipLevelCount: o.mips || 1, sampleCount: o.samples || 1, dimension: o.d ? '3d' : '2d' });
+const MIP = (n) => Math.round(Math.log2(n)) + 1; // full mip chain for a power-of-two size
 
 // ---------------------------------------------------------------- static resources
 const sRep = device.createSampler({ addressModeU: 'repeat', addressModeV: 'repeat', magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', maxAnisotropy: LV > 1 ? 1 : 8 });
@@ -37,10 +41,10 @@ const sClamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear' }
 const sCmp = device.createSampler({ compare: 'less-equal', magFilter: 'linear', minFilter: 'linear' });
 const tShadow = tex(SHADOW, SHADOW, DEPTH, TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING);
 const tDummy = tex(1, 1, DEPTH, TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING);
-const tDetail = tex(DETT, DETT, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: 11 });
-const tLeaf = tex(LEAFT, LEAFT, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: 10 });
-const tCloud = tex(512, 512, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: 10 });
-const tTile = tex(256, 256, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: 9 });
+const tDetail = tex(DETT, DETT, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: MIP(DETT) });
+const tLeaf = tex(LEAFT, LEAFT, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: MIP(LEAFT) });
+const tCloud = tex(512, 512, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: MIP(512) });
+const tTile = tex(256, 256, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: MIP(256) });
 const tGM = tex(384, 384, 'rgba8unorm', TU.TEXTURE_BINDING | TU.COPY_DST);
 
 const UB = new Float32Array(60), UBS = new Float32Array(60);
@@ -189,10 +193,10 @@ await say('Baking textures…', 0.6, 1500);
       r.setPipeline(pMip8); r.setBindGroup(0, blitBG(t.createView({ baseMipLevel: i - 1, mipLevelCount: 1 }))); r.draw(3); r.end();
     }
   };
-  bake(mod(W_DETAILB), tDetail, 11);
-  bake(mod(W_LEAFB), tLeaf, 10);
-  bake(mod(W_CLOUDB), tCloud, 10);
-  bake(mod(W_TILEB), tTile, 9);
+  bake(mod(W_DETAILB), tDetail, MIP(DETT));
+  bake(mod(W_LEAFB), tLeaf, MIP(LEAFT));
+  bake(mod(W_CLOUDB), tCloud, MIP(512));
+  bake(mod(W_TILEB), tTile, MIP(256));
   Q.submit([e.finish()]);
 }
 
@@ -501,7 +505,7 @@ function render() {
   if (slot) { e.resolveQuerySet(qs, 0, 2, qResolve, 0); e.copyBufferToBuffer(qResolve, 0, slot.b, 0, 16); }
   submitList[0] = e.finish();
   Q.submit(submitList);
-  if (slot) { slot.busy = true; slot.b.mapAsync(GPUMapMode.READ).then(slot.done); }
+  if (slot) { slot.busy = true; slot.b.mapAsync(GPUMapMode.READ).then(slot.done, () => { slot.busy = false; }); }
 }
 
 // ---------------------------------------------------------------- input
@@ -642,6 +646,7 @@ await say('Letting in the light…', 1, 600);
 render();
 await Q.onSubmittedWorkDone();
 setTimeout(() => keep('tabaristanLoad', ''), 15e3);
+booted = true;
 $('w').classList.add('off');
 ui(true);
 requestAnimationFrame((t) => { F[18] = t; requestAnimationFrame(frame); });

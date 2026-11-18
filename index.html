@@ -1080,7 +1080,6 @@ fn rid2(x: f32, z: f32, s: i32, oct: i32) -> f32 {
 fn ss(a: f32, b: f32, x: f32) -> f32 { let t = clamp((x - a) / (b - a), 0., 1.); return t * t * (3. - 2. * t); }
 fn lerp32(a: f32, b: f32, w: f32) -> f32 { return a + (b - a) * w; }
 fn flen2(x: f32, y: f32) -> f32 { return sqrt(x * x + y * y); }
-fn ss(a: f32, b: f32, x: f32) -> f32 { let t = clamp((x - a) / (b - a), 0., 1.); return t * t * (3. - 2. * t); }
 const FZ = ${FZ}.0000;
 const FZ2 = ${FZ2}.0000;
 const XRP = ${XR300.toFixed(4)};
@@ -1536,7 +1535,7 @@ fn swayOf(base: vec3f, t: f32, hgt: f32) -> vec2f {
   o.col = tint * (0.8 + 0.4 * fract(i.c.y * 0.159155));
   return o;
 }
-@vertex fn vssh(i: VI) -> @builtin(position) vec4f {
+@vertex fn vssh(i: VI) -> VO { // full VO: fssh reads uv/lf/ev to alpha-test the cards
   let t = g.cam.w;
   let sc = i.a.w;
   let yaw = i.b.x; let tilt = i.b.y;
@@ -1550,7 +1549,17 @@ fn swayOf(base: vec3f, t: f32, hgt: f32) -> vec2f {
   var w = i.a.xyz + R * lp + vec3f(sw.x, 0., sw.y) * select(1.0, 1.5, leaf > 0.);
   let flut = select(0.0, (sin(t * (4.5 + i.b.w * 3.0) + i.b.z * 40.0 + lp.y * 5.0) * 0.05 + sin(t * 6.3 + i.c.w * 50.0) * 0.02) * sc, leaf > 0.0);
   w = w + R * vec3f(flut, 0., flut * 0.7);
-  return g.sm * vec4f(w, 1.);
+  var o: VO;
+  o.cp = g.sm * vec4f(w, 1.); o.wp = w;
+  o.n = R * normalize(i.n.xyz);
+  o.uv = vec2f(f32(i.uv.x), f32(i.uv.y));
+  o.lf = leaf; o.sh = f32(i.uv.w); o.ev = i.c.z; o.am = i.c.w;
+  var tint = vec3f(0.10, 0.16, 0.055);
+  tint = mix(tint, vec3f(0.16, 0.145, 0.05), sat(i.c.x * 0.7 - 0.25));
+  tint = mix(tint, vec3f(0.06, 0.115, 0.06), step(0.9, i.c.z));
+  tint = mix(vec3f(0.16, 0.115, 0.07), tint, step(0.5, o.lf));
+  o.col = tint * (0.8 + 0.4 * fract(i.c.y * 0.159155));
+  return o;
 }
 @fragment fn fs(i: VO, @builtin(front_facing) ff: bool) -> @location(0) vec4f {
   let V = normalize(g.cam.xyz - i.wp);
@@ -1755,7 +1764,7 @@ struct FO { @builtin(position) cp: vec4f, @location(0) wp: vec3f, @location(1) u
   let edgeU = ss(0.0, 0.09, u) * ss(1.0, 0.91, u);
   let edgeV = ss(0.0, 0.06, v);
   let spray = ss(0.9, 1.0, v);
-  let alpha = sat((body * 0.62 + 0.30) * edgeU * edgeV);
+  var alpha = sat((body * 0.62 + 0.30) * edgeU * edgeV);
   let sh = shadow1(i.wp + vec3f(0., -0.4, 0.));
   var col = mix(vec3f(0.62, 0.72, 0.78), vec3f(1.02, 1.04, 1.06), body);
   col += sunc() * pow(sat(dot(vec3f(0., -1., 0.), g.sun.xyz)), 2.0) * 0.25 * sh;
@@ -2040,7 +2049,7 @@ fn tmap(x: vec3f) -> vec3f { return sat3((x * (2.51 * x + .03)) / (x * (2.43 * x
   let mx = vec2i(textureDimensions(tR)) - 1;
   var acc = vec3f(0.); var ws = 0.;
   for (var k = 0; k < 4; k++) {
-    let o = vec2i(i32(k & 1u), i32(k >> 1u));
+    let o = vec2i(k & 1, k >> 1);
     let r = textureLoad(tR, clamp(bi + o, vec2i(0), mx), 0);
     let bw = mix(1. - f.x, f.x, f32(o.x)) * mix(1. - f.y, f.y, f32(o.y));
     let w = (bw + .02) / (.02 + abs(r.a - zf) / zf);
@@ -2131,7 +2140,7 @@ fn H(uv: vec2f) -> f32 {
 `;
 
 // foliage texture: broadleaf cluster (top half), conifer sprigs (bottom half)
-const W_LEAFB = W_NOISE + W_FS + /*wgsl*/`
+const W_LEAFB = W_NOISE + S_G + W_FS + /*wgsl*/`
 fn rot2(p: vec2f, a: f32) -> vec2f { let c = cos(a); let s = sin(a); return vec2f(c * p.x - s * p.y, s * p.x + c * p.y); }
 fn leafSdf(p: vec2f, c: vec2f, a: f32, sz: f32) -> f32 {
   let q = rot2(p - c, a) / sz;
@@ -2231,7 +2240,10 @@ const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-perf
 if (!adapter) fail('No WebGPU adapter found.');
 const hasTS = adapter.features.has('timestamp-query');
 const device = await adapter.requestDevice({ requiredFeatures: hasTS ? ['timestamp-query'] : [] });
-device.addEventListener('uncapturederror', (e) => console.error('GPU: ' + e.error.message));
+let booted = false;
+const showErr = (m) => { if (!booted && !dead) { $('e').textContent = m; $('e').style.display = 'block'; } };
+device.addEventListener('uncapturederror', (e) => { console.error('GPU: ' + e.error.message); showErr('GPU error: ' + e.error.message.split('\n')[0]); });
+addEventListener('unhandledrejection', (ev) => { const r = ev.reason; console.error(r); showErr('Error: ' + (r && r.message || r)); });
 device.lost.then((l) => {
   if (l.reason === 'destroyed') return;
   if (LV < 2) { keep('tabaristan', LV + 1); location.reload(); }
@@ -2243,6 +2255,7 @@ const TU = GPUTextureUsage, BU = GPUBufferUsage, SS = GPUShaderStage;
 const mod = (code) => device.createShaderModule({ code });
 const buf = (data, usage) => { const b = device.createBuffer({ size: (data.byteLength + 3) & ~3, usage: usage | BU.COPY_DST }); Q.writeBuffer(b, 0, data.buffer || data, data.byteOffset || 0, data.byteLength); return b; };
 const tex = (w, h, format, usage, o = {}) => device.createTexture({ size: [w, h, o.d || 1], format, usage, mipLevelCount: o.mips || 1, sampleCount: o.samples || 1, dimension: o.d ? '3d' : '2d' });
+const MIP = (n) => Math.round(Math.log2(n)) + 1; // full mip chain for a power-of-two size
 
 // ---------------------------------------------------------------- static resources
 const sRep = device.createSampler({ addressModeU: 'repeat', addressModeV: 'repeat', magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', maxAnisotropy: LV > 1 ? 1 : 8 });
@@ -2250,10 +2263,10 @@ const sClamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear' }
 const sCmp = device.createSampler({ compare: 'less-equal', magFilter: 'linear', minFilter: 'linear' });
 const tShadow = tex(SHADOW, SHADOW, DEPTH, TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING);
 const tDummy = tex(1, 1, DEPTH, TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING);
-const tDetail = tex(DETT, DETT, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: 11 });
-const tLeaf = tex(LEAFT, LEAFT, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: 10 });
-const tCloud = tex(512, 512, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: 10 });
-const tTile = tex(256, 256, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: 9 });
+const tDetail = tex(DETT, DETT, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: MIP(DETT) });
+const tLeaf = tex(LEAFT, LEAFT, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: MIP(LEAFT) });
+const tCloud = tex(512, 512, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: MIP(512) });
+const tTile = tex(256, 256, 'rgba8unorm', TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING, { mips: MIP(256) });
 const tGM = tex(384, 384, 'rgba8unorm', TU.TEXTURE_BINDING | TU.COPY_DST);
 
 const UB = new Float32Array(60), UBS = new Float32Array(60);
@@ -2402,10 +2415,10 @@ await say('Baking textures…', 0.6, 1500);
       r.setPipeline(pMip8); r.setBindGroup(0, blitBG(t.createView({ baseMipLevel: i - 1, mipLevelCount: 1 }))); r.draw(3); r.end();
     }
   };
-  bake(mod(W_DETAILB), tDetail, 11);
-  bake(mod(W_LEAFB), tLeaf, 10);
-  bake(mod(W_CLOUDB), tCloud, 10);
-  bake(mod(W_TILEB), tTile, 9);
+  bake(mod(W_DETAILB), tDetail, MIP(DETT));
+  bake(mod(W_LEAFB), tLeaf, MIP(LEAFT));
+  bake(mod(W_CLOUDB), tCloud, MIP(512));
+  bake(mod(W_TILEB), tTile, MIP(256));
   Q.submit([e.finish()]);
 }
 
@@ -2714,7 +2727,7 @@ function render() {
   if (slot) { e.resolveQuerySet(qs, 0, 2, qResolve, 0); e.copyBufferToBuffer(qResolve, 0, slot.b, 0, 16); }
   submitList[0] = e.finish();
   Q.submit(submitList);
-  if (slot) { slot.busy = true; slot.b.mapAsync(GPUMapMode.READ).then(slot.done); }
+  if (slot) { slot.busy = true; slot.b.mapAsync(GPUMapMode.READ).then(slot.done, () => { slot.busy = false; }); }
 }
 
 // ---------------------------------------------------------------- input
@@ -2855,6 +2868,7 @@ await say('Letting in the light…', 1, 600);
 render();
 await Q.onSubmittedWorkDone();
 setTimeout(() => keep('tabaristanLoad', ''), 15e3);
+booted = true;
 $('w').classList.add('off');
 ui(true);
 requestAnimationFrame((t) => { F[18] = t; requestAnimationFrame(frame); });

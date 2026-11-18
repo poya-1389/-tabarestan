@@ -152,7 +152,7 @@ struct FO { @builtin(position) cp: vec4f, @location(0) wp: vec3f, @location(1) u
   let edgeU = ss(0.0, 0.09, u) * ss(1.0, 0.91, u);
   let edgeV = ss(0.0, 0.06, v);
   let spray = ss(0.9, 1.0, v);
-  let alpha = sat((body * 0.62 + 0.30) * edgeU * edgeV);
+  var alpha = sat((body * 0.62 + 0.30) * edgeU * edgeV);
   let sh = shadow1(i.wp + vec3f(0., -0.4, 0.));
   var col = mix(vec3f(0.62, 0.72, 0.78), vec3f(1.02, 1.04, 1.06), body);
   col += sunc() * pow(sat(dot(vec3f(0., -1., 0.), g.sun.xyz)), 2.0) * 0.25 * sh;
@@ -437,7 +437,7 @@ fn tmap(x: vec3f) -> vec3f { return sat3((x * (2.51 * x + .03)) / (x * (2.43 * x
   let mx = vec2i(textureDimensions(tR)) - 1;
   var acc = vec3f(0.); var ws = 0.;
   for (var k = 0; k < 4; k++) {
-    let o = vec2i(i32(k & 1u), i32(k >> 1u));
+    let o = vec2i(k & 1, k >> 1);
     let r = textureLoad(tR, clamp(bi + o, vec2i(0), mx), 0);
     let bw = mix(1. - f.x, f.x, f32(o.x)) * mix(1. - f.y, f.y, f32(o.y));
     let w = (bw + .02) / (.02 + abs(r.a - zf) / zf);
@@ -528,7 +528,7 @@ fn H(uv: vec2f) -> f32 {
 `;
 
 // foliage texture: broadleaf cluster (top half), conifer sprigs (bottom half)
-const W_LEAFB = W_NOISE + W_FS + /*wgsl*/`
+const W_LEAFB = W_NOISE + S_G + W_FS + /*wgsl*/`
 fn rot2(p: vec2f, a: f32) -> vec2f { let c = cos(a); let s = sin(a); return vec2f(c * p.x - s * p.y, s * p.x + c * p.y); }
 fn leafSdf(p: vec2f, c: vec2f, a: f32, sz: f32) -> f32 {
   let q = rot2(p - c, a) / sz;

@@ -45,7 +45,6 @@ fn rid2(x: f32, z: f32, s: i32, oct: i32) -> f32 {
 fn ss(a: f32, b: f32, x: f32) -> f32 { let t = clamp((x - a) / (b - a), 0., 1.); return t * t * (3. - 2. * t); }
 fn lerp32(a: f32, b: f32, w: f32) -> f32 { return a + (b - a) * w; }
 fn flen2(x: f32, y: f32) -> f32 { return sqrt(x * x + y * y); }
-fn ss(a: f32, b: f32, x: f32) -> f32 { let t = clamp((x - a) / (b - a), 0., 1.); return t * t * (3. - 2. * t); }
 const FZ = ${FZ}.0000;
 const FZ2 = ${FZ2}.0000;
 const XRP = ${XR300.toFixed(4)};
@@ -501,7 +500,7 @@ fn swayOf(base: vec3f, t: f32, hgt: f32) -> vec2f {
   o.col = tint * (0.8 + 0.4 * fract(i.c.y * 0.159155));
   return o;
 }
-@vertex fn vssh(i: VI) -> @builtin(position) vec4f {
+@vertex fn vssh(i: VI) -> VO { // full VO: fssh reads uv/lf/ev to alpha-test the cards
   let t = g.cam.w;
   let sc = i.a.w;
   let yaw = i.b.x; let tilt = i.b.y;
@@ -515,7 +514,17 @@ fn swayOf(base: vec3f, t: f32, hgt: f32) -> vec2f {
   var w = i.a.xyz + R * lp + vec3f(sw.x, 0., sw.y) * select(1.0, 1.5, leaf > 0.);
   let flut = select(0.0, (sin(t * (4.5 + i.b.w * 3.0) + i.b.z * 40.0 + lp.y * 5.0) * 0.05 + sin(t * 6.3 + i.c.w * 50.0) * 0.02) * sc, leaf > 0.0);
   w = w + R * vec3f(flut, 0., flut * 0.7);
-  return g.sm * vec4f(w, 1.);
+  var o: VO;
+  o.cp = g.sm * vec4f(w, 1.); o.wp = w;
+  o.n = R * normalize(i.n.xyz);
+  o.uv = vec2f(f32(i.uv.x), f32(i.uv.y));
+  o.lf = leaf; o.sh = f32(i.uv.w); o.ev = i.c.z; o.am = i.c.w;
+  var tint = vec3f(0.10, 0.16, 0.055);
+  tint = mix(tint, vec3f(0.16, 0.145, 0.05), sat(i.c.x * 0.7 - 0.25));
+  tint = mix(tint, vec3f(0.06, 0.115, 0.06), step(0.9, i.c.z));
+  tint = mix(vec3f(0.16, 0.115, 0.07), tint, step(0.5, o.lf));
+  o.col = tint * (0.8 + 0.4 * fract(i.c.y * 0.159155));
+  return o;
 }
 @fragment fn fs(i: VO, @builtin(front_facing) ff: bool) -> @location(0) vec4f {
   let V = normalize(g.cam.xyz - i.wp);
