@@ -383,10 +383,10 @@ const W_RBLUR = W_FS + /*wgsl*/`
   var acc = vec3f(0.); var ws = 0.;
   for (var y = -1; y <= 1; y++) { for (var x = -1; x <= 1; x++) {
     let r = textureLoad(tR, clamp(p + vec2i(x, y), vec2i(0), mx), 0);
-    let w = 1. / (.03 + abs(r.a - c.a) / c.a);
+    let w = 1. / (.03 + abs(r.a - c.a) / max(c.a, 1e-3)); // guard: c.a is view depth, NaN here poisons the composite
     acc += r.rgb * w; ws += w;
   } }
-  return vec4f(acc / ws, c.a);
+  return vec4f(acc / max(ws, 1e-3), c.a);
 }
 `;
 
@@ -404,7 +404,7 @@ fn kar(c: vec3f) -> vec4f { let w = 1. / (1. + max(c.r, max(c.g, c.b))); return 
   let c = kar(min(textureSampleLevel(t, s, uv + e * vec2f(-1., 1.), 0.).rgb, vec3f(24.)));
   let d = kar(min(textureSampleLevel(t, s, uv + e * vec2f(1., 1.), 0.).rgb, vec3f(24.)));
   let m = a + b + c + d;
-  return vec4f(m.rgb / m.a, 1.);
+  return vec4f(m.rgb / max(m.a, 1e-4), 1.); // all-black taps leave m.a = 0 -> NaN poisons the whole bloom chain
 }
 @fragment fn fsDown(@builtin(position) fc: vec4f) -> @location(0) vec4f {
   let uv = uvOf(fc, 2.); let e = 1. / vec2f(textureDimensions(t));
@@ -449,6 +449,7 @@ fn tmap(x: vec3f) -> vec3f { return sat3((x * (2.51 * x + .03)) / (x * (2.43 * x
   c *= g.mis.x;
   let q = uv - .5;
   c *= 1. - dot(q, q) * .5;
+  if (c.x != c.x || c.y != c.y || c.z != c.z) { c = vec3f(0.); } // NaN sweep: clamp(NaN) is 0 or 1 depending on driver
   c = tmap(c);
   let l0 = dot(c, vec3f(.2126, .7152, .0722));
   let l = mix(l0, l0 * l0 * (3. - 2. * l0), .5);

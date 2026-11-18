@@ -312,6 +312,7 @@ function collide() {
     }
   }
 }
+let queueBusy = false; // never queue a new frame while the GPU is still chewing the last one (floods the queue on slow GPUs)
 function frame(now) {
   requestAnimationFrame(frame);
   const dtr = now - F[18]; F[18] = now;
@@ -362,7 +363,7 @@ function frame(now) {
     collide();
     if (menu && !userMoved) F[YAW] += dt * 0.016; // gentle drift behind the menu
   }
-  render();
+  if (!queueBusy) { queueBusy = true; render(); Q.onSubmittedWorkDone().then(() => { queueBusy = false; }); }
   if (hud) {
     hN++; if (F[20] === undefined) F[20] = 0;
     F[20] += dtr / 1000;
